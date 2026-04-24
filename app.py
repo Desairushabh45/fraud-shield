@@ -2,6 +2,9 @@ import streamlit as st
 import joblib
 import numpy as np
 import time
+import os
+import pandas as pd
+from xgboost import XGBClassifier
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -302,7 +305,33 @@ label, [data-testid="stWidgetLabel"] p {
 # ── Load Model ─────────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    return joblib.load(r"D:\dell\fraud_detection\fraud_model.pkl")
+    model_path = r"D:\dell\fraud_detection\fraud_model.pkl"
+    if os.path.exists(model_path):
+        return joblib.load(model_path)
+    
+    with st.spinner("Training model for the first time. This may take a few moments..."):
+        data_path = r"D:\dell\fraud_detection\paysim_sample.csv"
+        if not os.path.exists(data_path):
+            st.error(f"Dataset not found at {data_path}. Please provide the dataset to train the model.")
+            st.stop()
+            
+        df = pd.read_csv(data_path)
+        
+        df = df[df['type'].isin(['TRANSFER', 'CASH_OUT'])].copy()
+        df['type'] = df['type'].map({'TRANSFER': 0, 'CASH_OUT': 1})
+        df['errorBalanceOrig'] = df['newbalanceOrig'] + df['amount'] - df['oldbalanceOrg']
+        df['errorBalanceDest'] = df['oldbalanceDest'] + df['amount'] - df['newbalanceDest']
+        
+        features = ['type', 'amount', 'oldbalanceOrg', 'newbalanceOrig', 
+                    'oldbalanceDest', 'newbalanceDest', 'errorBalanceOrig', 'errorBalanceDest']
+        X = df[features]
+        y = df['isFraud']
+        
+        model = XGBClassifier(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
+        model.fit(X, y)
+        
+        joblib.dump(model, model_path)
+    return model
 
 model = load_model()
 
